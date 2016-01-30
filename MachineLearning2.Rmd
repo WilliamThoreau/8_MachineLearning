@@ -1,0 +1,125 @@
+---
+title: "Machine Learning PA"
+author: "WT"
+date: "January 30, 2016"
+output: html_document
+---
+
+Our goal in this machine Learning script is to define if an activity is performed properly or not.
+The data is recorded by personal activity trackers such as Jawbone Up, Nike FuelBand, and Fitbit.
+visit <http://groupware.les.inf.puc-rio.br/har> for more information about the source data.
+
+The report will follow the flow of the code and each section of the code will be comented to explain the choices made.
+
+### Getting data
+```{r, echo=TRUE, warning=FALSE}
+library(dplyr)
+library(randomForest)
+#getwd()
+#[1] "D:/Documents/DataScience/DataScience/DataProductShiny"
+setwd("C:/Users/William/Documents/DataScience/")
+## Getting the train tables
+TrainSet <- read.csv("pml-training.csv")
+## Getting the test tables
+TestSet <- read.csv("pml-testing.csv")
+```
+
+
+### Selecting the proper predictors
+We now have a train data set and a test dataset.
+We could try to directly apply a machine learning algorithm on the data. However, due to the very large number of parameters the algorithm takes too long to run (I tried...)
+
+Thus we need to properly define the parameters to keep for the prediction
+We can see that there are 160 columns in the data set. 1 is the outcome (Class), then there are 159 possible predictors.
+
+From those 159 potential predictors we can eliminate the following:
+- X: because the position in the dataset (row number) is by no means linked to the activity performed.
+- multiple columns can be removed just by looking at the Test Set. In fact, the test set is missing data (NAs) for several columns. Thus those cannot predict the outcome. There is thus no need to keep them in computing the model. They are the following:
+kurtosis  
+skewness
+min
+max
+stddev
+var
+window
+timestamp
+amplitude
+avg
+total
+
+This is why I use the "grep" command to capture all columns having those names and then remove those colums from the train and test set.
+
+```{r}
+ColumnsNames<-names(TrainSet)
+#Capture columns number having the names we want to exclude
+ColToRemove <- c(grep("X",ColumnsNames), grep("kurtosis",ColumnsNames),grep("skewness",ColumnsNames),grep("min",ColumnsNames), grep("max",ColumnsNames),grep("stddev",ColumnsNames),grep("var",ColumnsNames),grep("window",ColumnsNames),grep("timestamp",ColumnsNames),grep("amplitude",ColumnsNames),grep("avg",ColumnsNames),grep("total",ColumnsNames))
+ColToKeep<- ColumnsNames[-ColToRemove]
+
+#Subset the train and test set to keep only desired predictors
+TrainSet_ExtraColRemoved <- select(TrainSet,one_of(ColToKeep))
+TestSet_ExtraColRemoved <- select(TestSet,one_of(ColToKeep[-50])) # remove col 50 beacuse there is no Class in the test set
+```
+
+
+### Creating a train and a validation set  
+Now that we have selected the desired predictors we can split our data set in 2 data sets (Sub_training1 that will be our train data set and Sub_testing1 that will be our validation data set)
+
+```{r, warning=FALSE}
+library(caret)
+set.seed(12354)
+inTrain = createDataPartition(TrainSet_ExtraColRemoved$classe, p = 0.75)[[1]]
+Sub_training1 = TrainSet_ExtraColRemoved[ inTrain,]
+Sub_testing1 = TrainSet_ExtraColRemoved[-inTrain,]
+ShuffledSub_training1 <- Sub_training1[sample(nrow(Sub_training1)),] # Here we shuffle the lines so that the position of the observation in the data set cannot be interpreted as a predictor by the ML algorithm
+
+#Re-names the lines so that the shuffling cannot be re-ordered
+rownames(ShuffledSub_training1) <- NULL
+```
+
+
+
+### Training the model
+One question that arise is : which machine learning algorithm should i select? 
+From the course it is mentioned that random forests is the algorithm having the best performance in most cases. Thus I will stick to random forest to create my prediction model.
+
+Note: The 50th column is the Class column
+```{r, cache=TRUE}
+library(randomForest)
+model = randomForest(y=ShuffledSub_training1$classe, x=ShuffledSub_training1[,-50], data=ShuffledSub_training1[,-50])
+```
+
+
+### Validating the model
+
+1. On the training set itself 
+2. On the validation set (Out of training test)
+
+```{r}
+library(e1071)
+CrossValSub_Training1 <- predict(model,Sub_training1)
+confusionMatrix(Sub_training1$classe,CrossValSub_Training1)
+
+CrossValSub_Testing1 <- predict(model,Sub_testing1)
+confusionMatrix(Sub_testing1$classe,CrossValSub_Testing1)
+```
+
+1. On the training set itself
+The model is doing a perfect prediction (accuracy = 1)
+
+2. On the validation set (Out of training test)  
+We see that the model is performing well with an accuracy of:99.61%
+It means that I have 0.9961^20 = 0.9248 (92.48%) of probability to find all the 20 activities right in the test data set... That seems not too bad right? So we can conclude the exercise with below code.
+
+### Solving the exercise
+We can now apply the model on the test data set
+
+```{r}
+CrossValSub_TEST <- predict(model,TestSet_ExtraColRemoved)
+CrossValSub_TEST
+```
+The outcome is perfect as I scored 20/20 using the output of this model in the exam.
+
+
+
+
+
